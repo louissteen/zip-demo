@@ -1,0 +1,3489 @@
+openapi: 3.1.0
+info:
+  title: Zip Procurement API
+  version: 1.0.0
+  summary: Programmatic access to purchase requests, purchase orders, invoices, bills, payouts, vendors, and budgets in Zip.
+  description: |
+    The Zip Procurement API gives you programmatic access to the objects that move through
+    Zip's procurement lifecycle: purchase requests, purchase orders, invoices, bills,
+    payouts, vendors, vendor credits, and budgets.
+
+    Use it to raise requests from another system, keep a data warehouse in sync, push
+    invoices in from a scanning provider, or read approval state for reporting. The API
+    follows the same permission model as the Zip application, so a token can only see the
+    subsidiaries, departments, and records its user or service account is entitled to.
+
+    All requests are made over HTTPS. All request and response bodies are JSON encoded with
+    UTF-8. Monetary values are always returned as an object with a string decimal amount
+    and an ISO 4217 currency code, never as a float.
+  contact:
+    name: Zip Support
+    url: https://support.zip.com
+    email: support@zip.com
+  license:
+    name: Proprietary
+    url: https://zip.com/terms
+
+servers:
+  - url: https://api.zip.com/v1
+    description: Production
+  - url: https://api.sandbox.zip.com/v1
+    description: Sandbox
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Requests
+    description: |
+      Purchase requests are the entry point to Zip. A request captures what someone wants
+      to buy, routes through an approval chain, and becomes a purchase order once approved.
+  - name: Purchase Orders
+    description: |
+      A purchase order commits spend against a vendor. Zip issues the PO to the vendor,
+      syncs it to your ERP, and matches incoming invoices against its line items.
+  - name: Invoices
+    description: |
+      Invoices are vendor documents received against a purchase order. Zip extracts header
+      and line data, matches the invoice to a PO, and produces a bill for approval.
+  - name: Bills
+    description: |
+      A bill is the payable record created from a matched, coded invoice. Bills route
+      through finance approval and then become eligible for payment.
+  - name: Payments
+    description: |
+      Payouts settle approved bills. Payouts are batched into payout groups, scheduled for
+      a funding date, and settled through ACH, wire, check, or virtual card.
+  - name: Vendors
+    description: |
+      Vendor records hold the supplier master data Zip uses across requests, orders, and
+      payments, including remit-to details, contacts, and onboarding state.
+  - name: Vendor Credits
+    description: |
+      A vendor credit records an amount a vendor owes back, from a return, an overbilling,
+      or a negotiated rebate. Credits are applied against bills before payment.
+  - name: Budgets
+    description: |
+      Budgets track committed and actual spend against a department, cost center, or
+      category so that requests can be checked before they are approved.
+  - name: Webhooks
+    description: |
+      Webhook subscriptions deliver lifecycle events to an HTTPS endpoint you control, so
+      downstream systems can react to approvals, matches, and payments as they happen.
+
+paths:
+  /requests:
+    get:
+      operationId: listRequests
+      summary: List purchase requests
+      description: |
+        Returns a page of purchase requests, newest first. Use the status, vendor, and
+        requester filters to narrow the result set, and follow the cursor in `page_info`
+        to page through large collections.
+      tags: [Requests]
+      parameters:
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/CreatedAfter'
+        - $ref: '#/components/parameters/CreatedBefore'
+        - name: status
+          in: query
+          description: Filter by request status. Repeat the parameter to match several statuses.
+          required: false
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/RequestStatus'
+          example: [pending_approval]
+        - name: vendor_id
+          in: query
+          description: Return only requests for this vendor.
+          required: false
+          schema:
+            type: string
+          example: ven_8Kq2Xm4rP1
+        - name: requester_email
+          in: query
+          description: Return only requests raised by this user.
+          required: false
+          schema:
+            type: string
+            format: email
+          example: dana.whitfield@acme.com
+        - name: sort
+          in: query
+          description: Sort order for the page.
+          required: false
+          schema:
+            type: string
+            enum: [created_at_desc, created_at_asc, total_amount_desc, total_amount_asc]
+            default: created_at_desc
+      responses:
+        '200':
+          description: A page of purchase requests.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, page_info]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Request'
+                  page_info:
+                    $ref: '#/components/schemas/PageInfo'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    post:
+      operationId: createRequest
+      summary: Create a purchase request
+      description: |
+        Creates a purchase request in `draft` status. The request is not routed for
+        approval until you call the submit endpoint, which lets you build the request over
+        several calls or attach documents before routing starts.
+      tags: [Requests]
+      parameters:
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestCreate'
+      responses:
+        '201':
+          description: The created purchase request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Request'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /requests/{request_id}:
+    parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/SubsidiaryHeader'
+    get:
+      operationId: getRequest
+      summary: Retrieve a purchase request
+      description: |
+        Returns a single purchase request, including its line items, coding, and the
+        current state of its approval chain.
+      tags: [Requests]
+      responses:
+        '200':
+          description: The requested purchase request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Request'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updateRequest
+      summary: Update a purchase request
+      description: |
+        Updates the editable fields on a request. Requests in `draft` accept any field.
+        Requests in `pending_approval` accept only attachments and custom field values,
+        and changing a line item amount restarts the approval chain.
+      tags: [Requests]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestUpdate'
+      responses:
+        '200':
+          description: The updated purchase request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Request'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /requests/{request_id}/submit:
+    post:
+      operationId: submitRequest
+      summary: Submit a request for approval
+      description: |
+        Moves a `draft` request into `pending_approval` and builds its approval chain from
+        the amount, category, subsidiary, and any custom fields on the request. Returns the
+        request with the resolved chain so you can show the requester who has to review it.
+      tags: [Requests]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                comment:
+                  type: string
+                  description: Note shown to the first approver in the chain.
+                  example: Renewal of the design tooling contract, needed before the December 31 expiry.
+      responses:
+        '200':
+          description: The submitted request with its resolved approval chain.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Request'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /requests/{request_id}/cancel:
+    post:
+      operationId: cancelRequest
+      summary: Cancel a purchase request
+      description: |
+        Cancels a request that has not yet been converted to a purchase order. Any open
+        approval steps are withdrawn and approvers are notified. A cancelled request cannot
+        be reopened, so raise a new request if the buyer still needs the item.
+      tags: [Requests]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: Reason recorded on the request timeline.
+                  example: Requester found an existing contract with the same vendor.
+      responses:
+        '200':
+          description: The cancelled request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Request'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /requests/{request_id}/approvals:
+    get:
+      operationId: listRequestApprovals
+      summary: List approvals on a request
+      description: |
+        Returns every step in the request's approval chain in order, including steps that
+        are still pending. Use this to render an approval timeline or to find out which
+        approver a request is currently waiting on.
+      tags: [Requests]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: The approval steps on the request.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, page_info]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Approver'
+                  page_info:
+                    $ref: '#/components/schemas/PageInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /purchase_orders:
+    get:
+      operationId: listPurchaseOrders
+      summary: List purchase orders
+      description: |
+        Returns a page of purchase orders, newest first. Filter by status, vendor, or the
+        request the PO came from to reconcile Zip against your ERP.
+      tags: [Purchase Orders]
+      parameters:
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/CreatedAfter'
+        - $ref: '#/components/parameters/CreatedBefore'
+        - name: status
+          in: query
+          description: Filter by purchase order status.
+          required: false
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/PurchaseOrderStatus'
+          example: [open]
+        - name: vendor_id
+          in: query
+          description: Return only purchase orders issued to this vendor.
+          required: false
+          schema:
+            type: string
+          example: ven_8Kq2Xm4rP1
+        - name: request_id
+          in: query
+          description: Return only purchase orders created from this request.
+          required: false
+          schema:
+            type: string
+          example: req_3Nv7Ld9tQz
+      responses:
+        '200':
+          description: A page of purchase orders.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, page_info]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PurchaseOrder'
+                  page_info:
+                    $ref: '#/components/schemas/PageInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    post:
+      operationId: createPurchaseOrder
+      summary: Create a purchase order
+      description: |
+        Creates a purchase order, either from an approved request or standalone. A PO
+        created from a request inherits its vendor, coding, and line items, and the request
+        moves to `approved`. Standalone POs require the full line item set in the body.
+      tags: [Purchase Orders]
+      parameters:
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrderCreate'
+      responses:
+        '201':
+          description: The created purchase order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /purchase_orders/{purchase_order_id}:
+    parameters:
+      - $ref: '#/components/parameters/PurchaseOrderId'
+      - $ref: '#/components/parameters/SubsidiaryHeader'
+    get:
+      operationId: getPurchaseOrder
+      summary: Retrieve a purchase order
+      description: |
+        Returns a single purchase order with its line items, received and billed amounts,
+        and the identifier it carries in your ERP.
+      tags: [Purchase Orders]
+      responses:
+        '200':
+          description: The requested purchase order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseOrder'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updatePurchaseOrder
+      summary: Update a purchase order
+      description: |
+        Updates an open purchase order. Changing quantities, unit prices, or the delivery
+        date creates a new PO version and, depending on your workflow configuration, may
+        route the change for re-approval before it reaches the vendor.
+      tags: [Purchase Orders]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrderUpdate'
+      responses:
+        '200':
+          description: The updated purchase order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /purchase_orders/{purchase_order_id}/send:
+    post:
+      operationId: sendPurchaseOrder
+      summary: Send a purchase order to the vendor
+      description: |
+        Emails the current version of the purchase order to the vendor contacts you name,
+        or to the vendor's default ordering contact if you name none. Sending records a
+        dispatch event on the PO timeline and starts the vendor acknowledgement clock.
+      tags: [Purchase Orders]
+      parameters:
+        - $ref: '#/components/parameters/PurchaseOrderId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                contact_ids:
+                  type: array
+                  description: Vendor contacts to send the order to.
+                  items:
+                    type: string
+                  example: [vct_5Tb1Hy8kNr]
+                message:
+                  type: string
+                  description: Message included in the body of the email.
+                  example: Please confirm receipt and the expected delivery date for PO-10428.
+      responses:
+        '200':
+          description: The purchase order with its updated dispatch state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseOrder'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /purchase_orders/{purchase_order_id}/close:
+    post:
+      operationId: closePurchaseOrder
+      summary: Close a purchase order
+      description: |
+        Closes a purchase order so that no further invoices can be matched to it and the
+        remaining committed amount is released back to the budget. Closing a PO with an
+        unbilled balance requires `force` to be set to true.
+      tags: [Purchase Orders]
+      parameters:
+        - $ref: '#/components/parameters/PurchaseOrderId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: Reason recorded on the purchase order timeline.
+                  example: Vendor delivered in full and final invoice has been billed.
+                force:
+                  type: boolean
+                  description: Close the order even though an unbilled balance remains.
+                  default: false
+      responses:
+        '200':
+          description: The closed purchase order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseOrder'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /purchase_orders/{purchase_order_id}/versions:
+    get:
+      operationId: listPurchaseOrderVersions
+      summary: List purchase order versions
+      description: |
+        Returns every version of the purchase order in the order it was issued. Each
+        version records who changed the order, what the totals were at that point, and
+        whether the version was sent to the vendor.
+      tags: [Purchase Orders]
+      parameters:
+        - $ref: '#/components/parameters/PurchaseOrderId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: The versions of the purchase order.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, page_info]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PurchaseOrderVersion'
+                  page_info:
+                    $ref: '#/components/schemas/PageInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /invoices:
+    get:
+      operationId: listInvoices
+      summary: List invoices
+      description: |
+        Returns a page of invoices, newest first. Filter by match state to find invoices
+        that are waiting on a purchase order match or that landed in exception.
+      tags: [Invoices]
+      parameters:
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/CreatedAfter'
+        - $ref: '#/components/parameters/CreatedBefore'
+        - name: match_state
+          in: query
+          description: Filter by the invoice match state.
+          required: false
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/InvoiceMatchState'
+          example: [exception]
+        - name: vendor_id
+          in: query
+          description: Return only invoices from this vendor.
+          required: false
+          schema:
+            type: string
+          example: ven_8Kq2Xm4rP1
+        - name: purchase_order_id
+          in: query
+          description: Return only invoices matched to this purchase order.
+          required: false
+          schema:
+            type: string
+          example: po_6Rj4Wc2mBt
+      responses:
+        '200':
+          description: A page of invoices.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, page_info]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Invoice'
+                  page_info:
+                    $ref: '#/components/schemas/PageInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: createInvoice
+      summary: Upload an invoice
+      description: |
+        Creates an invoice from a vendor document. Send the file as multipart form data
+        when you want Zip to extract the header and line values, or send JSON when your
+        scanning provider has already captured them. Zip attempts a purchase order match
+        as soon as the invoice is created.
+      tags: [Invoices]
+      parameters:
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceCreate'
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, vendor_id]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The invoice document, as PDF, PNG, or TIFF, up to 20 MB.
+                vendor_id:
+                  type: string
+                  description: Vendor the invoice was received from.
+                  example: ven_8Kq2Xm4rP1
+                purchase_order_id:
+                  type: string
+                  description: Purchase order to match against, if known.
+                  example: po_6Rj4Wc2mBt
+      responses:
+        '201':
+          description: The created invoice.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: The uploaded document is larger than the 20 MB limit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /invoices/{invoice_id}:
+    get:
+      operationId: getInvoice
+      summary: Retrieve an invoice
+      description: |
+        Returns a single invoice with its extracted header values, line items, match state,
+        and a link to the source document.
+      tags: [Invoices]
+      parameters:
+        - $ref: '#/components/parameters/InvoiceId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+      responses:
+        '200':
+          description: The requested invoice.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /invoices/{invoice_id}/match:
+    post:
+      operationId: matchInvoice
+      summary: Match an invoice to a purchase order
+      description: |
+        Matches the invoice to a purchase order and, optionally, maps each invoice line to
+        a specific PO line. Zip compares quantity and price against the order and the
+        receipt, and returns the resulting match state with any exceptions it raised.
+      tags: [Invoices]
+      parameters:
+        - $ref: '#/components/parameters/InvoiceId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [purchase_order_id]
+              properties:
+                purchase_order_id:
+                  type: string
+                  description: Purchase order to match the invoice against.
+                  example: po_6Rj4Wc2mBt
+                line_matches:
+                  type: array
+                  description: Explicit mapping of invoice lines to purchase order lines.
+                  items:
+                    type: object
+                    required: [invoice_line_id, purchase_order_line_id]
+                    properties:
+                      invoice_line_id:
+                        type: string
+                        example: ivl_2Fd9Rn6xUq
+                      purchase_order_line_id:
+                        type: string
+                        example: pol_9Ws3Kv7aLd
+                      quantity:
+                        type: string
+                        description: Quantity to consume from the purchase order line.
+                        example: "12"
+      responses:
+        '200':
+          description: The invoice with its updated match state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /invoices/{invoice_id}/code:
+    post:
+      operationId: codeInvoice
+      summary: Code an invoice
+      description: |
+        Applies accounting coding to the invoice lines: GL code, department, cost center,
+        and any custom segments your ERP requires. A fully coded invoice with a clean match
+        becomes a bill and enters the approval chain.
+      tags: [Invoices]
+      parameters:
+        - $ref: '#/components/parameters/InvoiceId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lines]
+              properties:
+                lines:
+                  type: array
+                  description: Coding to apply, one entry per invoice line.
+                  items:
+                    type: object
+                    required: [invoice_line_id]
+                    properties:
+                      invoice_line_id:
+                        type: string
+                        example: ivl_2Fd9Rn6xUq
+                      gl_code:
+                        type: string
+                        example: "6420"
+                      department:
+                        type: string
+                        example: People Operations
+                      cost_center:
+                        type: string
+                        example: CC-1180
+                      category:
+                        type: string
+                        example: Employee Gifts
+      responses:
+        '200':
+          description: The coded invoice.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /invoices/{invoice_id}/return:
+    post:
+      operationId: returnInvoice
+      summary: Return an invoice to the vendor
+      description: |
+        Returns the invoice to the vendor with a reason, for example a missing purchase
+        order number or a price that does not agree with the order. The invoice is removed
+        from the AP queue and the vendor is asked to reissue it.
+      tags: [Invoices]
+      parameters:
+        - $ref: '#/components/parameters/InvoiceId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason_code]
+              properties:
+                reason_code:
+                  type: string
+                  description: Standard reason the invoice is being returned.
+                  enum:
+                    - missing_po_number
+                    - price_mismatch
+                    - quantity_mismatch
+                    - duplicate_invoice
+                    - wrong_subsidiary
+                    - missing_tax_detail
+                  example: price_mismatch
+                message:
+                  type: string
+                  description: Note sent to the vendor contact with the return.
+                  example: Unit price on line 2 is 240.00 but the purchase order is 210.00. Please reissue.
+      responses:
+        '200':
+          description: The returned invoice.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /bills:
+    get:
+      operationId: listBills
+      summary: List bills
+      description: |
+        Returns a page of bills, newest first. Filter by status to build an AP work queue,
+        or by due date to find bills approaching their payment terms.
+      tags: [Bills]
+      parameters:
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          description: Filter by bill status.
+          required: false
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/BillStatus'
+          example: [pending_approval]
+        - name: vendor_id
+          in: query
+          description: Return only bills for this vendor.
+          required: false
+          schema:
+            type: string
+          example: ven_8Kq2Xm4rP1
+        - name: due_before
+          in: query
+          description: Return only bills due on or before this date.
+          required: false
+          schema:
+            type: string
+            format: date
+          example: 2026-10-15
+      responses:
+        '200':
+          description: A page of bills.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, page_info]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Bill'
+                  page_info:
+                    $ref: '#/components/schemas/PageInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /bills/{bill_id}:
+    get:
+      operationId: getBill
+      summary: Retrieve a bill
+      description: |
+        Returns a single bill with its coding, the invoice and purchase order it came from,
+        applied vendor credits, and its remaining payable amount.
+      tags: [Bills]
+      parameters:
+        - $ref: '#/components/parameters/BillId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+      responses:
+        '200':
+          description: The requested bill.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bill'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /bills/{bill_id}/approve:
+    post:
+      operationId: approveBill
+      summary: Approve a bill
+      description: |
+        Records an approval on the current step of the bill's approval chain, on behalf of
+        the token's user. When the last step is approved the bill moves to `approved` and
+        becomes eligible for a payout.
+      tags: [Bills]
+      parameters:
+        - $ref: '#/components/parameters/BillId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                comment:
+                  type: string
+                  description: Note recorded with the approval.
+                  example: Checked against the signed order form, amounts agree.
+      responses:
+        '200':
+          description: The bill with its updated approval state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bill'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /bills/{bill_id}/reject:
+    post:
+      operationId: rejectBill
+      summary: Reject a bill
+      description: |
+        Rejects the bill and stops the approval chain. The bill moves to `rejected` and AP
+        is notified so the underlying invoice can be corrected, recoded, or returned to the
+        vendor.
+      tags: [Bills]
+      parameters:
+        - $ref: '#/components/parameters/BillId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  description: Why the bill is being rejected.
+                  example: Coded to the wrong cost center, should be CC-1180.
+      responses:
+        '200':
+          description: The rejected bill.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bill'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /bills/{bill_id}/approvers:
+    get:
+      operationId: listBillApprovers
+      summary: List approvers on a bill
+      description: |
+        Returns the approval chain assembled for the bill, in order, with the state of each
+        step. Pending steps show who the bill is waiting on and when the step was assigned.
+      tags: [Bills]
+      parameters:
+        - $ref: '#/components/parameters/BillId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: The approvers on the bill.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, page_info]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Approver'
+                  page_info:
+                    $ref: '#/components/schemas/PageInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /payouts:
+    get:
+      operationId: listPayouts
+      summary: List payouts
+      description: |
+        Returns a page of payouts, newest first. A payout is the settlement of one or more
+        approved bills to a single vendor through one payment method.
+      tags: [Payments]
+      parameters:
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          description: Filter by payout status.
+          required: false
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/PayoutStatus'
+          example: [scheduled]
+        - name: vendor_id
+          in: query
+          description: Return only payouts to this vendor.
+          required: false
+          schema:
+            type: string
+          example: ven_8Kq2Xm4rP1
+        - name: payout_group_id
+          in: query
+          description: Return only payouts in this payout group.
+          required: false
+          schema:
+            type: string
+          example: pyg_4Xz8Qn1vHm
+      responses:
+        '200':
+          description: A page of payouts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, page_info]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Payout'
+                  page_info:
+                    $ref: '#/components/schemas/PageInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /payouts/{payout_id}:
+    get:
+      operationId: getPayout
+      summary: Retrieve a payout
+      description: |
+        Returns a single payout with the bills it settles, the payment method used, the
+        funding and settlement dates, and any failure detail returned by the bank.
+      tags: [Payments]
+      parameters:
+        - $ref: '#/components/parameters/PayoutId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+      responses:
+        '200':
+          description: The requested payout.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payout'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /payout_groups:
+    post:
+      operationId: createPayoutGroup
+      summary: Create a payout group
+      description: |
+        Batches approved bills into a payout group so they can be reviewed and funded
+        together. Zip groups the bills by vendor and payment method, applies any open
+        vendor credits, and returns the payouts it will create.
+      tags: [Payments]
+      parameters:
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bill_ids]
+              properties:
+                bill_ids:
+                  type: array
+                  description: Approved bills to include in the group.
+                  items:
+                    type: string
+                  example: [bil_7Pm5Zt3cKw, bil_1Yh6Bq4nSe]
+                name:
+                  type: string
+                  description: Label shown on the payout group in Zip.
+                  example: Acme weekly run, week 40
+                funding_date:
+                  type: string
+                  format: date
+                  description: Date the group is funded from the source account.
+                  example: 2026-10-02
+      responses:
+        '201':
+          description: The created payout group.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutGroup'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /payouts/schedule:
+    post:
+      operationId: schedulePayouts
+      summary: Schedule payouts
+      description: |
+        Schedules the payouts in a payout group for settlement on a funding date. Scheduled
+        payouts move to `processing` on the funding date and settle according to the
+        payment method, typically two business days for ACH.
+      tags: [Payments]
+      parameters:
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payout_group_id, funding_date]
+              properties:
+                payout_group_id:
+                  type: string
+                  description: Payout group to schedule.
+                  example: pyg_4Xz8Qn1vHm
+                funding_date:
+                  type: string
+                  format: date
+                  description: Date the payouts are funded.
+                  example: 2026-10-02
+                payment_method:
+                  $ref: '#/components/schemas/PaymentMethod'
+      responses:
+        '200':
+          description: The scheduled payout group.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutGroup'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /payments/transactions:
+    get:
+      operationId: listPaymentTransactions
+      summary: List payment transactions
+      description: |
+        Returns the ledger of movements behind your payouts: funding debits, vendor
+        credits, settlements, returns, and fees. Use it to reconcile Zip against your bank
+        statement.
+      tags: [Payments]
+      parameters:
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: payout_id
+          in: query
+          description: Return only transactions belonging to this payout.
+          required: false
+          schema:
+            type: string
+          example: pyo_2Cg7Ju5dRx
+        - name: posted_after
+          in: query
+          description: Return only transactions posted at or after this timestamp.
+          required: false
+          schema:
+            type: string
+            format: date-time
+          example: 2026-09-01T00:00:00Z
+      responses:
+        '200':
+          description: A page of payment transactions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, page_info]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PaymentTransaction'
+                  page_info:
+                    $ref: '#/components/schemas/PageInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /vendors:
+    get:
+      operationId: listVendors
+      summary: List vendors
+      description: |
+        Returns a page of vendor records. Filter by status to separate vendors that are
+        still in onboarding from those approved for spend, or search by name to resolve a
+        vendor before raising a request.
+      tags: [Vendors]
+      parameters:
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          description: Filter by vendor status.
+          required: false
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/VendorStatus'
+          example: [active]
+        - name: name
+          in: query
+          description: Case-insensitive partial match on the vendor's legal or display name.
+          required: false
+          schema:
+            type: string
+          example: Efficient Llama
+        - name: tax_id
+          in: query
+          description: Exact match on the vendor's tax identification number.
+          required: false
+          schema:
+            type: string
+          example: 84-3921776
+      responses:
+        '200':
+          description: A page of vendors.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, page_info]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Vendor'
+                  page_info:
+                    $ref: '#/components/schemas/PageInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: createVendor
+      summary: Create a vendor
+      description: |
+        Creates a vendor record in `draft` and, when `send_onboarding_invite` is true,
+        emails the primary contact an invitation to the vendor portal. The vendor completes
+        their own tax, banking, and diligence details there.
+      tags: [Vendors]
+      parameters:
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorCreate'
+      responses:
+        '201':
+          description: The created vendor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vendor'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /vendors/{vendor_id}:
+    parameters:
+      - $ref: '#/components/parameters/VendorId'
+      - $ref: '#/components/parameters/SubsidiaryHeader'
+    get:
+      operationId: getVendor
+      summary: Retrieve a vendor
+      description: |
+        Returns a single vendor record with its addresses, payment terms, default payment
+        method, and the subsidiaries it is approved to trade with.
+      tags: [Vendors]
+      responses:
+        '200':
+          description: The requested vendor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vendor'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updateVendor
+      summary: Update a vendor
+      description: |
+        Updates vendor master data. Changes to banking details, tax identifiers, or the
+        legal name are treated as sensitive and re-enter the supplier onboarding review
+        before they take effect on payments.
+      tags: [Vendors]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorUpdate'
+      responses:
+        '200':
+          description: The updated vendor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vendor'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /vendors/{vendor_id}/contacts:
+    get:
+      operationId: listVendorContacts
+      summary: List vendor contacts
+      description: |
+        Returns the people Zip holds for a vendor, with the role each one plays: ordering,
+        remittance, or portal administration. Contacts are the recipients used when you
+        send a purchase order or return an invoice.
+      tags: [Vendors]
+      parameters:
+        - $ref: '#/components/parameters/VendorId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of vendor contacts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, page_info]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VendorContact'
+                  page_info:
+                    $ref: '#/components/schemas/PageInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vendors/{vendor_id}/onboarding_status:
+    get:
+      operationId: getVendorOnboardingStatus
+      summary: Get vendor onboarding status
+      description: |
+        Returns where the vendor is in supplier onboarding: which diligence tasks are
+        complete, which reviewers are outstanding, and what the vendor still has to submit
+        in the vendor portal.
+      tags: [Vendors]
+      parameters:
+        - $ref: '#/components/parameters/VendorId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+      responses:
+        '200':
+          description: The vendor's onboarding status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorOnboardingStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vendor_credits:
+    get:
+      operationId: listVendorCredits
+      summary: List vendor credits
+      description: |
+        Returns a page of vendor credits. Filter by status to find credits that still have
+        an unapplied balance, which Zip offsets against the next payout to that vendor.
+      tags: [Vendor Credits]
+      parameters:
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          description: Filter by vendor credit status.
+          required: false
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/VendorCreditStatus'
+          example: [open]
+        - name: vendor_id
+          in: query
+          description: Return only credits from this vendor.
+          required: false
+          schema:
+            type: string
+          example: ven_8Kq2Xm4rP1
+      responses:
+        '200':
+          description: A page of vendor credits.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, page_info]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VendorCredit'
+                  page_info:
+                    $ref: '#/components/schemas/PageInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: createVendorCredit
+      summary: Create a vendor credit
+      description: |
+        Records a credit a vendor owes back, from a return, an overbilling, or a negotiated
+        rebate. The credit opens with its full amount unapplied and can be applied to any
+        approved bill for the same vendor and subsidiary.
+      tags: [Vendor Credits]
+      parameters:
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorCreditCreate'
+      responses:
+        '201':
+          description: The created vendor credit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorCredit'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /vendor_credits/{vendor_credit_id}:
+    get:
+      operationId: getVendorCredit
+      summary: Retrieve a vendor credit
+      description: |
+        Returns a single vendor credit with its original amount, its remaining balance, and
+        the bills it has already been applied to.
+      tags: [Vendor Credits]
+      parameters:
+        - $ref: '#/components/parameters/VendorCreditId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+      responses:
+        '200':
+          description: The requested vendor credit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorCredit'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vendor_credits/{vendor_credit_id}/apply:
+    post:
+      operationId: applyVendorCredit
+      summary: Apply a vendor credit to a bill
+      description: |
+        Applies all or part of the credit's remaining balance to an approved bill, reducing
+        the amount that will be paid out. The bill and the credit must belong to the same
+        vendor, subsidiary, and currency.
+      tags: [Vendor Credits]
+      parameters:
+        - $ref: '#/components/parameters/VendorCreditId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bill_id]
+              properties:
+                bill_id:
+                  type: string
+                  description: Bill to apply the credit against.
+                  example: bil_7Pm5Zt3cKw
+                amount:
+                  $ref: '#/components/schemas/Money'
+      responses:
+        '200':
+          description: The vendor credit with its updated balance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorCredit'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /budgets:
+    get:
+      operationId: listBudgets
+      summary: List budgets
+      description: |
+        Returns a page of budgets with their committed and actual spend for the current
+        period. Filter by owner, period, or dimension to find the budget a request would be
+        checked against.
+      tags: [Budgets]
+      parameters:
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: period
+          in: query
+          description: Fiscal period the budget covers, as YYYY or YYYY-Qn.
+          required: false
+          schema:
+            type: string
+          example: 2026-Q4
+        - name: department
+          in: query
+          description: Return only budgets scoped to this department.
+          required: false
+          schema:
+            type: string
+          example: People Operations
+        - name: owner_email
+          in: query
+          description: Return only budgets owned by this user.
+          required: false
+          schema:
+            type: string
+            format: email
+          example: priya.raman@acme.com
+      responses:
+        '200':
+          description: A page of budgets.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, page_info]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Budget'
+                  page_info:
+                    $ref: '#/components/schemas/PageInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /budgets/{budget_id}:
+    get:
+      operationId: getBudget
+      summary: Retrieve a budget
+      description: |
+        Returns a single budget with its allocated amount, committed spend from open
+        requests and purchase orders, actual spend from bills, and the remaining balance.
+      tags: [Budgets]
+      parameters:
+        - $ref: '#/components/parameters/BudgetId'
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+      responses:
+        '200':
+          description: The requested budget.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Budget'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /budgets/available:
+    post:
+      operationId: checkAvailableBudget
+      summary: Check available budget
+      description: |
+        Resolves which budget a proposed amount would consume, given a department, cost
+        center, category, and period, and reports whether enough remains. Call this before
+        submitting a request so the requester sees the answer while they are still editing.
+      tags: [Budgets]
+      parameters:
+        - $ref: '#/components/parameters/SubsidiaryHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount:
+                  $ref: '#/components/schemas/Money'
+                department:
+                  type: string
+                  example: People Operations
+                cost_center:
+                  type: string
+                  example: CC-1180
+                category:
+                  type: string
+                  example: Employee Gifts
+                period:
+                  type: string
+                  description: Fiscal period to check, as YYYY or YYYY-Qn. Defaults to the current period.
+                  example: 2026-Q4
+      responses:
+        '200':
+          description: The budget check result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetCheckResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /webhook_subscriptions:
+    get:
+      operationId: listWebhookSubscriptions
+      summary: List webhook subscriptions
+      description: |
+        Returns every webhook subscription on the account, with the events each one listens
+        for and the result of its most recent delivery attempt.
+      tags: [Webhooks]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of webhook subscriptions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, page_info]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WebhookSubscription'
+                  page_info:
+                    $ref: '#/components/schemas/PageInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: createWebhookSubscription
+      summary: Create a webhook subscription
+      description: |
+        Registers an HTTPS endpoint to receive the events you name. The response includes
+        the signing secret once, at creation time. Store it, and use it to verify the
+        `Zip-Signature` header on every delivery.
+      tags: [Webhooks]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, events]
+              properties:
+                url:
+                  type: string
+                  format: uri
+                  description: HTTPS endpoint that receives the events.
+                  example: https://hooks.acme.com/zip/procurement
+                events:
+                  type: array
+                  description: Event types to deliver to this endpoint.
+                  items:
+                    $ref: '#/components/schemas/WebhookEventType'
+                  example: [bill.approved, purchase_order.sent]
+                description:
+                  type: string
+                  description: Label shown on the subscription in Zip.
+                  example: NetSuite sync listener
+      responses:
+        '201':
+          description: The created subscription, including its signing secret.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/WebhookSubscription'
+                  - type: object
+                    properties:
+                      signing_secret:
+                        type: string
+                        description: Secret used to verify delivery signatures. Returned only at creation.
+                        example: whsec_9d41c07f2b6e4a8fb0c35de17a92f4c8
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /webhook_subscriptions/{subscription_id}:
+    parameters:
+      - $ref: '#/components/parameters/SubscriptionId'
+    get:
+      operationId: getWebhookSubscription
+      summary: Retrieve a webhook subscription
+      description: |
+        Returns a single webhook subscription with its event list, status, and last
+        delivery result. The signing secret is never returned after creation.
+      tags: [Webhooks]
+      responses:
+        '200':
+          description: The requested subscription.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookSubscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: deleteWebhookSubscription
+      summary: Delete a webhook subscription
+      description: |
+        Deletes the subscription and stops all deliveries to its endpoint. Events already
+        queued for delivery are discarded, and the signing secret is revoked.
+      tags: [Webhooks]
+      responses:
+        '204':
+          description: The subscription was deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API key
+      description: |
+        Send your API key as a bearer token: `Authorization: Bearer zk_live_...`. Keys are
+        created in Zip under **Settings**, **API keys**, and carry the scopes you grant
+        them at creation.
+
+  parameters:
+    SubsidiaryHeader:
+      name: X-Zip-Subsidiary
+      in: header
+      required: false
+      description: |
+        Scopes the call to a single subsidiary, by name or subsidiary ID. Omit it and the
+        call covers every subsidiary the token can see.
+      schema:
+        type: string
+      example: Zip Germany
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Unique key that makes a write safe to retry. Zip stores the response for 24 hours
+        and returns the same result for a repeated key.
+      schema:
+        type: string
+      example: 6f1a2b3c-4d5e-4f60-9a71-8b2c3d4e5f60
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Number of records to return per page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 25
+      example: 25
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor from the `next_cursor` field of a previous page.
+      schema:
+        type: string
+      example: eyJvZmZzZXQiOjI1LCJ0cyI6MTc1ODAwMDAwMH0
+    CreatedAfter:
+      name: created_after
+      in: query
+      required: false
+      description: Return only records created at or after this timestamp.
+      schema:
+        type: string
+        format: date-time
+      example: 2026-09-01T00:00:00Z
+    CreatedBefore:
+      name: created_before
+      in: query
+      required: false
+      description: Return only records created before this timestamp.
+      schema:
+        type: string
+        format: date-time
+      example: 2026-10-01T00:00:00Z
+    RequestId:
+      name: request_id
+      in: path
+      required: true
+      description: Identifier of the purchase request.
+      schema:
+        type: string
+      example: req_3Nv7Ld9tQz
+    PurchaseOrderId:
+      name: purchase_order_id
+      in: path
+      required: true
+      description: Identifier of the purchase order.
+      schema:
+        type: string
+      example: po_6Rj4Wc2mBt
+    InvoiceId:
+      name: invoice_id
+      in: path
+      required: true
+      description: Identifier of the invoice.
+      schema:
+        type: string
+      example: inv_5Hn2Vd8pFj
+    BillId:
+      name: bill_id
+      in: path
+      required: true
+      description: Identifier of the bill.
+      schema:
+        type: string
+      example: bil_7Pm5Zt3cKw
+    PayoutId:
+      name: payout_id
+      in: path
+      required: true
+      description: Identifier of the payout.
+      schema:
+        type: string
+      example: pyo_2Cg7Ju5dRx
+    VendorId:
+      name: vendor_id
+      in: path
+      required: true
+      description: Identifier of the vendor.
+      schema:
+        type: string
+      example: ven_8Kq2Xm4rP1
+    VendorCreditId:
+      name: vendor_credit_id
+      in: path
+      required: true
+      description: Identifier of the vendor credit.
+      schema:
+        type: string
+      example: vcr_3Ea9Ms6yTn
+    BudgetId:
+      name: budget_id
+      in: path
+      required: true
+      description: Identifier of the budget.
+      schema:
+        type: string
+      example: bud_1Qk4Fp7wLv
+    SubscriptionId:
+      name: subscription_id
+      in: path
+      required: true
+      description: Identifier of the webhook subscription.
+      schema:
+        type: string
+      example: whs_4Dr8Nb2hGy
+
+  responses:
+    BadRequest:
+      description: The request was malformed or a parameter failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: invalid_request_error
+            code: parameter_invalid
+            message: limit must be between 1 and 100.
+            param: limit
+            request_id: rq_0a1b2c3d4e5f
+    Unauthorized:
+      description: The API key is missing, malformed, or revoked.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: authentication_error
+            code: invalid_api_key
+            message: The API key provided is not valid.
+            request_id: rq_0a1b2c3d4e5f
+    Forbidden:
+      description: The API key is valid but lacks the scope or subsidiary access required.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: permission_error
+            code: insufficient_scope
+            message: This key does not have the bills:write scope.
+            request_id: rq_0a1b2c3d4e5f
+    NotFound:
+      description: No record with that identifier is visible to this key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: invalid_request_error
+            code: resource_missing
+            message: No purchase order exists with ID po_6Rj4Wc2mBt.
+            request_id: rq_0a1b2c3d4e5f
+    Conflict:
+      description: The record is in a state that does not allow this operation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: invalid_state_error
+            code: invalid_status_transition
+            message: A bill in status paid cannot be rejected.
+            request_id: rq_0a1b2c3d4e5f
+    UnprocessableEntity:
+      description: The request was well formed but failed a business rule.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: validation_error
+            code: budget_exceeded
+            message: The request exceeds the remaining balance on budget bud_1Qk4Fp7wLv.
+            param: line_items[0].amount
+            request_id: rq_0a1b2c3d4e5f
+    TooManyRequests:
+      description: The rate limit for this key has been exceeded.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+          example: 12
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: rate_limit_error
+            code: rate_limit_exceeded
+            message: Too many requests. Retry after 12 seconds.
+            request_id: rq_0a1b2c3d4e5f
+
+  schemas:
+    Currency:
+      type: string
+      description: ISO 4217 currency code.
+      enum: [USD, EUR, GBP]
+      example: USD
+
+    Money:
+      type: object
+      description: |
+        A monetary value. The amount is a string decimal so that no precision is lost in
+        transit. Do not parse it into a binary float.
+      required: [amount, currency]
+      properties:
+        amount:
+          type: string
+          description: Decimal amount, with the minor units the currency uses.
+          pattern: '^-?[0-9]+\.[0-9]{2}$'
+          example: "12450.00"
+        currency:
+          $ref: '#/components/schemas/Currency'
+
+    Address:
+      type: object
+      description: A postal address used for billing, shipping, or remittance.
+      properties:
+        line1:
+          type: string
+          example: 1180 Harrison Street
+        line2:
+          type: string
+          example: Floor 4
+        city:
+          type: string
+          example: San Francisco
+        state:
+          type: string
+          description: State, province, or region.
+          example: CA
+        postal_code:
+          type: string
+          example: "94103"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code.
+          example: US
+
+    PageInfo:
+      type: object
+      description: Cursor pagination metadata returned with every list response.
+      required: [has_next_page, limit]
+      properties:
+        has_next_page:
+          type: boolean
+          description: Whether another page follows this one.
+          example: true
+        next_cursor:
+          type: [string, "null"]
+          description: Cursor to pass as `cursor` to fetch the next page. Null on the last page.
+          example: eyJvZmZzZXQiOjI1LCJ0cyI6MTc1ODAwMDAwMH0
+        limit:
+          type: integer
+          description: Page size used for this response.
+          example: 25
+
+    Error:
+      type: object
+      description: |
+        Every error response uses this shape. Branch on `code`, which is stable, rather
+        than on `message`, which is written for humans and may change.
+      required: [type, code, message]
+      properties:
+        type:
+          type: string
+          description: Broad class of error.
+          enum:
+            - invalid_request_error
+            - authentication_error
+            - permission_error
+            - invalid_state_error
+            - validation_error
+            - rate_limit_error
+            - api_error
+          example: validation_error
+        code:
+          type: string
+          description: Stable machine-readable error code.
+          example: budget_exceeded
+        message:
+          type: string
+          description: Human-readable explanation of what went wrong.
+          example: The request exceeds the remaining balance on budget bud_1Qk4Fp7wLv.
+        param:
+          type: string
+          description: Field the error relates to, when the error is field specific.
+          example: line_items[0].amount
+        request_id:
+          type: string
+          description: Identifier for this API call. Quote it when contacting support.
+          example: rq_0a1b2c3d4e5f
+        doc_url:
+          type: string
+          format: uri
+          description: Link to the documentation for this error code.
+          example: https://docs.zip.com/api-reference/getting-started/conventions
+
+    PaymentMethod:
+      type: string
+      description: How a payout is settled to the vendor.
+      enum: [ach, wire, check, virtual_card]
+      example: ach
+
+    PaymentTerms:
+      type: string
+      description: Terms that set a bill's due date from its invoice date.
+      enum: [due_on_receipt, net_15, net_30, net_45, net_60, net_90]
+      example: net_30
+
+    RequestStatus:
+      type: string
+      description: Lifecycle state of a purchase request.
+      enum: [draft, pending_approval, approved, rejected, cancelled]
+      example: pending_approval
+
+    PurchaseOrderStatus:
+      type: string
+      description: Lifecycle state of a purchase order.
+      enum: [open, closed, cancelled]
+      example: open
+
+    InvoiceMatchState:
+      type: string
+      description: |
+        Result of matching the invoice against its purchase order and receipts.
+        `exception` means a tolerance was breached and a human has to resolve it.
+      enum: [not_matched, partially_matched, matched, exception]
+      example: matched
+
+    BillStatus:
+      type: string
+      description: Lifecycle state of a bill.
+      enum: [uncoded, pending_approval, approved, paid, rejected]
+      example: pending_approval
+
+    PayoutStatus:
+      type: string
+      description: Lifecycle state of a payout.
+      enum: [scheduled, processing, paid, failed, cancelled]
+      example: scheduled
+
+    PayoutGroupStatus:
+      type: string
+      description: Lifecycle state of a payout group.
+      enum: [draft, scheduled, processing, completed, cancelled]
+      example: scheduled
+
+    VendorStatus:
+      type: string
+      description: Lifecycle state of a vendor record.
+      enum: [draft, onboarding, active, inactive]
+      example: active
+
+    VendorCreditStatus:
+      type: string
+      description: Lifecycle state of a vendor credit.
+      enum: [open, partially_applied, applied, void]
+      example: open
+
+    ApprovalState:
+      type: string
+      description: State of a single step in an approval chain.
+      enum: [pending, approved, rejected, skipped, delegated]
+      example: pending
+
+    Approver:
+      type: object
+      description: One step in an approval chain, on a request, a purchase order, or a bill.
+      required: [id, step, state, name, email]
+      properties:
+        id:
+          type: string
+          example: apr_5Lk3Yt8bXc
+        step:
+          type: integer
+          description: Position of this step in the chain, starting at 1.
+          example: 2
+        name:
+          type: string
+          example: Priya Raman
+        email:
+          type: string
+          format: email
+          example: priya.raman@acme.com
+        role:
+          type: string
+          description: Why this approver is on the chain.
+          example: Department head
+        state:
+          $ref: '#/components/schemas/ApprovalState'
+        comment:
+          type: string
+          example: Checked against the signed order form, amounts agree.
+        assigned_at:
+          type: string
+          format: date-time
+          example: 2026-09-14T09:12:44Z
+        decided_at:
+          type: [string, "null"]
+          format: date-time
+          example: 2026-09-15T16:03:11Z
+
+    LineItem:
+      type: object
+      description: |
+        A single line on a request, purchase order, or invoice. Amounts are calculated as
+        quantity multiplied by unit price, before tax.
+      required: [description, quantity, unit_price]
+      properties:
+        id:
+          type: string
+          example: lin_8Vb2Qs5jHd
+        description:
+          type: string
+          example: Annual subscription, design collaboration platform, 40 seats
+        quantity:
+          type: string
+          description: Decimal quantity, as a string.
+          example: "40"
+        unit_price:
+          $ref: '#/components/schemas/Money'
+        amount:
+          $ref: '#/components/schemas/Money'
+        category:
+          type: string
+          description: Zip spend category for this line.
+          example: Employee Gifts
+        subcategory:
+          type: string
+          example: Recognition and awards
+        gl_code:
+          type: string
+          example: "6420"
+        department:
+          type: string
+          example: People Operations
+        cost_center:
+          type: string
+          example: CC-1180
+        start_date:
+          type: string
+          format: date
+          description: Service start date, for subscription and services lines.
+          example: 2026-10-01
+        end_date:
+          type: string
+          format: date
+          example: 2027-09-30
+
+    Request:
+      type: object
+      description: A purchase request raised by a buyer and routed through an approval chain.
+      required: [id, object, status, title, subsidiary, total_amount, created_at]
+      properties:
+        id:
+          type: string
+          example: req_3Nv7Ld9tQz
+        object:
+          type: string
+          const: request
+          example: request
+        number:
+          type: string
+          description: Human-readable request number shown in the Zip application.
+          example: PR-20418
+        status:
+          $ref: '#/components/schemas/RequestStatus'
+        title:
+          type: string
+          example: Design collaboration platform renewal
+        description:
+          type: string
+          example: Renewal of the annual design tooling contract for the product design team.
+        subsidiary:
+          type: string
+          example: Acme
+        requester:
+          type: object
+          properties:
+            name:
+              type: string
+              example: Dana Whitfield
+            email:
+              type: string
+              format: email
+              example: dana.whitfield@acme.com
+        vendor_id:
+          type: string
+          example: ven_8Kq2Xm4rP1
+        vendor_name:
+          type: string
+          example: Efficient Llama Systems
+        category:
+          type: string
+          example: Employee Gifts
+        payment_terms:
+          $ref: '#/components/schemas/PaymentTerms'
+        needed_by:
+          type: string
+          format: date
+          example: 2026-10-01
+        line_items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineItem'
+        total_amount:
+          $ref: '#/components/schemas/Money'
+        approvers:
+          type: array
+          description: The approval chain, present once the request has been submitted.
+          items:
+            $ref: '#/components/schemas/Approver'
+        purchase_order_id:
+          type: [string, "null"]
+          description: Purchase order created from this request, once it exists.
+          example: po_6Rj4Wc2mBt
+        custom_fields:
+          type: object
+          description: Values for the custom fields on your intake form, keyed by field name.
+          additionalProperties: true
+          example:
+            Contract end date: 2027-09-30
+            Data classification: Internal
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-09-14T08:55:02Z
+        updated_at:
+          type: string
+          format: date-time
+          example: 2026-09-15T16:03:11Z
+
+    RequestCreate:
+      type: object
+      description: Fields accepted when creating a purchase request.
+      required: [title, subsidiary, line_items]
+      properties:
+        title:
+          type: string
+          example: Design collaboration platform renewal
+        description:
+          type: string
+          example: Renewal of the annual design tooling contract for the product design team.
+        subsidiary:
+          type: string
+          example: Acme
+        vendor_id:
+          type: string
+          example: ven_8Kq2Xm4rP1
+        vendor_name:
+          type: string
+          description: Use when the vendor is new and does not yet have a record in Zip.
+          example: Efficient Llama Systems
+        category:
+          type: string
+          example: Employee Gifts
+        payment_terms:
+          $ref: '#/components/schemas/PaymentTerms'
+        needed_by:
+          type: string
+          format: date
+          example: 2026-10-01
+        line_items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/LineItem'
+        custom_fields:
+          type: object
+          additionalProperties: true
+          example:
+            Contract end date: 2027-09-30
+
+    RequestUpdate:
+      type: object
+      description: Fields accepted when updating a purchase request.
+      properties:
+        title:
+          type: string
+          example: Design collaboration platform renewal, 45 seats
+        description:
+          type: string
+        category:
+          type: string
+          example: Employee Gifts
+        payment_terms:
+          $ref: '#/components/schemas/PaymentTerms'
+        needed_by:
+          type: string
+          format: date
+          example: 2026-10-15
+        line_items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineItem'
+        custom_fields:
+          type: object
+          additionalProperties: true
+
+    PurchaseOrder:
+      type: object
+      description: A purchase order issued to a vendor against an approved request.
+      required: [id, object, status, subsidiary, vendor_id, total_amount, created_at]
+      properties:
+        id:
+          type: string
+          example: po_6Rj4Wc2mBt
+        object:
+          type: string
+          const: purchase_order
+          example: purchase_order
+        number:
+          type: string
+          example: PO-10428
+        status:
+          $ref: '#/components/schemas/PurchaseOrderStatus'
+        version:
+          type: integer
+          description: Current version number. Increments each time the order is amended.
+          example: 2
+        request_id:
+          type: [string, "null"]
+          example: req_3Nv7Ld9tQz
+        subsidiary:
+          type: string
+          example: Acme
+        vendor_id:
+          type: string
+          example: ven_8Kq2Xm4rP1
+        vendor_name:
+          type: string
+          example: Efficient Llama Systems
+        payment_terms:
+          $ref: '#/components/schemas/PaymentTerms'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        line_items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineItem'
+        total_amount:
+          $ref: '#/components/schemas/Money'
+        billed_amount:
+          $ref: '#/components/schemas/Money'
+        remaining_amount:
+          $ref: '#/components/schemas/Money'
+        shipping_address:
+          $ref: '#/components/schemas/Address'
+        billing_address:
+          $ref: '#/components/schemas/Address'
+        delivery_date:
+          type: string
+          format: date
+          example: 2026-10-01
+        sent_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the current version was last sent to the vendor.
+          example: 2026-09-16T10:41:20Z
+        erp_reference:
+          type: [string, "null"]
+          description: Identifier this order carries in your ERP.
+          example: NS-PO-88213
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-09-16T10:22:04Z
+        updated_at:
+          type: string
+          format: date-time
+          example: 2026-09-24T13:09:55Z
+
+    PurchaseOrderCreate:
+      type: object
+      description: Fields accepted when creating a purchase order.
+      required: [subsidiary]
+      properties:
+        request_id:
+          type: string
+          description: Approved request to create the order from. Omit for a standalone order.
+          example: req_3Nv7Ld9tQz
+        subsidiary:
+          type: string
+          example: Acme
+        vendor_id:
+          type: string
+          example: ven_8Kq2Xm4rP1
+        payment_terms:
+          $ref: '#/components/schemas/PaymentTerms'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        line_items:
+          type: array
+          description: Required for standalone orders. Inherited from the request otherwise.
+          items:
+            $ref: '#/components/schemas/LineItem'
+        shipping_address:
+          $ref: '#/components/schemas/Address'
+        delivery_date:
+          type: string
+          format: date
+          example: 2026-10-01
+
+    PurchaseOrderUpdate:
+      type: object
+      description: Fields accepted when amending an open purchase order.
+      properties:
+        line_items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineItem'
+        payment_terms:
+          $ref: '#/components/schemas/PaymentTerms'
+        delivery_date:
+          type: string
+          format: date
+          example: 2026-10-15
+        shipping_address:
+          $ref: '#/components/schemas/Address'
+        note:
+          type: string
+          description: Reason for the amendment, recorded on the new version.
+          example: Added five seats at the contracted unit price.
+
+    PurchaseOrderVersion:
+      type: object
+      description: A point-in-time version of a purchase order.
+      required: [version, total_amount, created_at]
+      properties:
+        version:
+          type: integer
+          example: 2
+        total_amount:
+          $ref: '#/components/schemas/Money'
+        changed_by:
+          type: string
+          format: email
+          example: dana.whitfield@acme.com
+        note:
+          type: string
+          example: Added five seats at the contracted unit price.
+        sent_to_vendor:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-09-24T13:09:55Z
+
+    Invoice:
+      type: object
+      description: A vendor invoice received against a purchase order.
+      required: [id, object, vendor_id, match_state, total_amount, created_at]
+      properties:
+        id:
+          type: string
+          example: inv_5Hn2Vd8pFj
+        object:
+          type: string
+          const: invoice
+          example: invoice
+        invoice_number:
+          type: string
+          description: Number the vendor put on the document.
+          example: ELS-2026-4417
+        vendor_id:
+          type: string
+          example: ven_8Kq2Xm4rP1
+        vendor_name:
+          type: string
+          example: Efficient Llama Systems
+        subsidiary:
+          type: string
+          example: Zip Germany
+        purchase_order_id:
+          type: [string, "null"]
+          example: po_6Rj4Wc2mBt
+        bill_id:
+          type: [string, "null"]
+          description: Bill created from this invoice, once matching and coding are complete.
+          example: bil_7Pm5Zt3cKw
+        match_state:
+          $ref: '#/components/schemas/InvoiceMatchState'
+        match_exceptions:
+          type: array
+          description: Tolerances breached during matching, empty when the match is clean.
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+                enum: [price_variance, quantity_variance, no_receipt, over_billing, duplicate]
+                example: price_variance
+              line_id:
+                type: string
+                example: ivl_2Fd9Rn6xUq
+              detail:
+                type: string
+                example: Unit price is 240.00 against a purchase order price of 210.00.
+        invoice_date:
+          type: string
+          format: date
+          example: 2026-09-30
+        due_date:
+          type: string
+          format: date
+          example: 2026-10-30
+        payment_terms:
+          $ref: '#/components/schemas/PaymentTerms'
+        line_items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineItem'
+        subtotal_amount:
+          $ref: '#/components/schemas/Money'
+        tax_amount:
+          $ref: '#/components/schemas/Money'
+        total_amount:
+          $ref: '#/components/schemas/Money'
+        document_url:
+          type: string
+          format: uri
+          description: Time-limited link to the source document.
+          example: https://files.zip.com/invoices/inv_5Hn2Vd8pFj.pdf
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-10-01T07:14:38Z
+        updated_at:
+          type: string
+          format: date-time
+          example: 2026-10-01T07:16:02Z
+
+    InvoiceCreate:
+      type: object
+      description: Fields accepted when creating an invoice from already extracted data.
+      required: [vendor_id, invoice_number, invoice_date, total_amount]
+      properties:
+        vendor_id:
+          type: string
+          example: ven_8Kq2Xm4rP1
+        subsidiary:
+          type: string
+          example: Zip Germany
+        purchase_order_id:
+          type: string
+          example: po_6Rj4Wc2mBt
+        invoice_number:
+          type: string
+          example: ELS-2026-4417
+        invoice_date:
+          type: string
+          format: date
+          example: 2026-09-30
+        payment_terms:
+          $ref: '#/components/schemas/PaymentTerms'
+        line_items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineItem'
+        tax_amount:
+          $ref: '#/components/schemas/Money'
+        total_amount:
+          $ref: '#/components/schemas/Money'
+        document_url:
+          type: string
+          format: uri
+          description: Link Zip can fetch the source document from.
+          example: https://files.acme.com/ap/ELS-2026-4417.pdf
+
+    Bill:
+      type: object
+      description: The payable record created from a matched and coded invoice.
+      required: [id, object, status, vendor_id, total_amount, due_date, created_at]
+      properties:
+        id:
+          type: string
+          example: bil_7Pm5Zt3cKw
+        object:
+          type: string
+          const: bill
+          example: bill
+        number:
+          type: string
+          example: BILL-30291
+        status:
+          $ref: '#/components/schemas/BillStatus'
+        vendor_id:
+          type: string
+          example: ven_8Kq2Xm4rP1
+        vendor_name:
+          type: string
+          example: Efficient Llama Systems
+        subsidiary:
+          type: string
+          example: Acme
+        invoice_id:
+          type: string
+          example: inv_5Hn2Vd8pFj
+        purchase_order_id:
+          type: [string, "null"]
+          example: po_6Rj4Wc2mBt
+        line_items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineItem'
+        total_amount:
+          $ref: '#/components/schemas/Money'
+        applied_credit_amount:
+          $ref: '#/components/schemas/Money'
+        payable_amount:
+          $ref: '#/components/schemas/Money'
+        payment_terms:
+          $ref: '#/components/schemas/PaymentTerms'
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod'
+        due_date:
+          type: string
+          format: date
+          example: 2026-10-30
+        approvers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Approver'
+        payout_id:
+          type: [string, "null"]
+          description: Payout that settled this bill, once one exists.
+          example: pyo_2Cg7Ju5dRx
+        erp_reference:
+          type: [string, "null"]
+          example: NS-BILL-44102
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-10-01T07:16:02Z
+        updated_at:
+          type: string
+          format: date-time
+          example: 2026-10-03T11:48:19Z
+
+    Payout:
+      type: object
+      description: The settlement of one or more approved bills to a single vendor.
+      required: [id, object, status, vendor_id, amount, created_at]
+      properties:
+        id:
+          type: string
+          example: pyo_2Cg7Ju5dRx
+        object:
+          type: string
+          const: payout
+          example: payout
+        status:
+          $ref: '#/components/schemas/PayoutStatus'
+        payout_group_id:
+          type: [string, "null"]
+          example: pyg_4Xz8Qn1vHm
+        vendor_id:
+          type: string
+          example: ven_8Kq2Xm4rP1
+        vendor_name:
+          type: string
+          example: Efficient Llama Systems
+        subsidiary:
+          type: string
+          example: Acme
+        bill_ids:
+          type: array
+          items:
+            type: string
+          example: [bil_7Pm5Zt3cKw, bil_1Yh6Bq4nSe]
+        amount:
+          $ref: '#/components/schemas/Money'
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod'
+        funding_date:
+          type: string
+          format: date
+          description: Date the funds are drawn from the source account.
+          example: 2026-10-02
+        settled_at:
+          type: [string, "null"]
+          format: date-time
+          example: 2026-10-06T15:22:00Z
+        remittance_reference:
+          type: string
+          description: Reference shown to the vendor on the remittance advice.
+          example: ACME-REM-77201
+        failure_reason:
+          type: [string, "null"]
+          description: Bank reason returned when the payout status is failed.
+          example: Account closed at the receiving bank.
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-10-01T18:03:41Z
+
+    PayoutGroup:
+      type: object
+      description: A batch of payouts funded and released together.
+      required: [id, object, status, payouts, total_amount, created_at]
+      properties:
+        id:
+          type: string
+          example: pyg_4Xz8Qn1vHm
+        object:
+          type: string
+          const: payout_group
+          example: payout_group
+        name:
+          type: string
+          example: Acme weekly run, week 40
+        status:
+          $ref: '#/components/schemas/PayoutGroupStatus'
+        subsidiary:
+          type: string
+          example: Acme
+        funding_date:
+          type: string
+          format: date
+          example: 2026-10-02
+        payouts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Payout'
+        payout_count:
+          type: integer
+          example: 24
+        total_amount:
+          $ref: '#/components/schemas/Money'
+        created_by:
+          type: string
+          format: email
+          example: marcus.oyelaran@acme.com
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-10-01T18:03:41Z
+
+    PaymentTransaction:
+      type: object
+      description: A single movement in the payments ledger behind a payout.
+      required: [id, object, type, amount, posted_at]
+      properties:
+        id:
+          type: string
+          example: ptx_9Az3Kd6uWq
+        object:
+          type: string
+          const: payment_transaction
+          example: payment_transaction
+        type:
+          type: string
+          enum: [funding_debit, settlement, credit_applied, return, fee, reversal]
+          example: settlement
+        payout_id:
+          type: string
+          example: pyo_2Cg7Ju5dRx
+        amount:
+          $ref: '#/components/schemas/Money'
+        description:
+          type: string
+          example: ACH settlement to Efficient Llama Systems
+        posted_at:
+          type: string
+          format: date-time
+          example: 2026-10-06T15:22:00Z
+
+    Vendor:
+      type: object
+      description: A supplier record used across requests, orders, invoices, and payments.
+      required: [id, object, status, legal_name, created_at]
+      properties:
+        id:
+          type: string
+          example: ven_8Kq2Xm4rP1
+        object:
+          type: string
+          const: vendor
+          example: vendor
+        status:
+          $ref: '#/components/schemas/VendorStatus'
+        legal_name:
+          type: string
+          example: Efficient Llama Systems, Inc.
+        display_name:
+          type: string
+          example: Efficient Llama Systems
+        tax_id:
+          type: string
+          description: Tax identification number, masked for keys without the vendors:pii scope.
+          example: 84-3921776
+        website:
+          type: string
+          format: uri
+          example: https://efficientllama.example.com
+        subsidiaries:
+          type: array
+          description: Subsidiaries this vendor is approved to trade with.
+          items:
+            type: string
+          example: [Acme, Zip Germany]
+        default_currency:
+          $ref: '#/components/schemas/Currency'
+        payment_terms:
+          $ref: '#/components/schemas/PaymentTerms'
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod'
+        billing_address:
+          $ref: '#/components/schemas/Address'
+        remit_to_address:
+          $ref: '#/components/schemas/Address'
+        categories:
+          type: array
+          description: Spend categories this vendor is approved for.
+          items:
+            type: string
+          example: [Employee Gifts, Software]
+        primary_contact:
+          $ref: '#/components/schemas/VendorContact'
+        erp_reference:
+          type: [string, "null"]
+          example: NS-VEND-3391
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-05-11T14:02:33Z
+        updated_at:
+          type: string
+          format: date-time
+          example: 2026-09-02T09:41:07Z
+
+    VendorCreate:
+      type: object
+      description: Fields accepted when creating a vendor record.
+      required: [legal_name]
+      properties:
+        legal_name:
+          type: string
+          example: Efficient Llama Systems, Inc.
+        display_name:
+          type: string
+          example: Efficient Llama Systems
+        tax_id:
+          type: string
+          example: 84-3921776
+        website:
+          type: string
+          format: uri
+          example: https://efficientllama.example.com
+        subsidiaries:
+          type: array
+          items:
+            type: string
+          example: [Acme]
+        default_currency:
+          $ref: '#/components/schemas/Currency'
+        payment_terms:
+          $ref: '#/components/schemas/PaymentTerms'
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod'
+        billing_address:
+          $ref: '#/components/schemas/Address'
+        primary_contact:
+          $ref: '#/components/schemas/VendorContact'
+        send_onboarding_invite:
+          type: boolean
+          description: Email the primary contact an invitation to the vendor portal.
+          default: true
+
+    VendorUpdate:
+      type: object
+      description: Fields accepted when updating a vendor record.
+      properties:
+        display_name:
+          type: string
+          example: Efficient Llama Systems
+        status:
+          $ref: '#/components/schemas/VendorStatus'
+        subsidiaries:
+          type: array
+          items:
+            type: string
+          example: [Acme, Zip Germany]
+        payment_terms:
+          $ref: '#/components/schemas/PaymentTerms'
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod'
+        billing_address:
+          $ref: '#/components/schemas/Address'
+        remit_to_address:
+          $ref: '#/components/schemas/Address'
+        categories:
+          type: array
+          items:
+            type: string
+          example: [Employee Gifts]
+
+    VendorContact:
+      type: object
+      description: A person at the vendor that Zip can correspond with.
+      required: [name, email]
+      properties:
+        id:
+          type: string
+          example: vct_5Tb1Hy8kNr
+        name:
+          type: string
+          example: Rosa Delacroix
+        email:
+          type: string
+          format: email
+          example: rosa.delacroix@efficientllama.example.com
+        phone:
+          type: string
+          example: +1 415 555 0142
+        role:
+          type: string
+          description: What this contact is used for.
+          enum: [ordering, remittance, portal_admin, sales, support]
+          example: ordering
+        is_primary:
+          type: boolean
+          example: true
+
+    VendorOnboardingStatus:
+      type: object
+      description: Progress of a vendor through supplier onboarding.
+      required: [vendor_id, stage, tasks]
+      properties:
+        vendor_id:
+          type: string
+          example: ven_8Kq2Xm4rP1
+        stage:
+          type: string
+          enum: [not_started, invited, vendor_submitting, in_review, approved, rejected]
+          example: in_review
+        invited_at:
+          type: [string, "null"]
+          format: date-time
+          example: 2026-05-11T14:05:12Z
+        completed_at:
+          type: [string, "null"]
+          format: date-time
+          example: null
+        tasks:
+          type: array
+          description: Diligence and data collection tasks on the onboarding workflow.
+          items:
+            type: object
+            required: [name, state]
+            properties:
+              name:
+                type: string
+                example: Security review
+              owner:
+                type: string
+                description: Team or person responsible for the task.
+                example: IT Security
+              state:
+                type: string
+                enum: [not_started, in_progress, complete, waiting_on_vendor, blocked]
+                example: in_progress
+              completed_at:
+                type: [string, "null"]
+                format: date-time
+                example: null
+
+    VendorCredit:
+      type: object
+      description: An amount a vendor owes back, applied against bills before payment.
+      required: [id, object, status, vendor_id, amount, remaining_amount, created_at]
+      properties:
+        id:
+          type: string
+          example: vcr_3Ea9Ms6yTn
+        object:
+          type: string
+          const: vendor_credit
+          example: vendor_credit
+        number:
+          type: string
+          example: VC-2044
+        status:
+          $ref: '#/components/schemas/VendorCreditStatus'
+        vendor_id:
+          type: string
+          example: ven_8Kq2Xm4rP1
+        vendor_name:
+          type: string
+          example: Efficient Llama Systems
+        subsidiary:
+          type: string
+          example: Acme
+        reason:
+          type: string
+          enum: [return, overbilling, rebate, price_adjustment, duplicate_payment]
+          example: overbilling
+        amount:
+          $ref: '#/components/schemas/Money'
+        remaining_amount:
+          $ref: '#/components/schemas/Money'
+        applications:
+          type: array
+          description: Bills this credit has been applied to.
+          items:
+            type: object
+            properties:
+              bill_id:
+                type: string
+                example: bil_7Pm5Zt3cKw
+              amount:
+                $ref: '#/components/schemas/Money'
+              applied_at:
+                type: string
+                format: date-time
+                example: 2026-10-02T09:30:11Z
+        credit_date:
+          type: string
+          format: date
+          example: 2026-09-28
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-09-28T12:00:00Z
+
+    VendorCreditCreate:
+      type: object
+      description: Fields accepted when recording a vendor credit.
+      required: [vendor_id, amount]
+      properties:
+        vendor_id:
+          type: string
+          example: ven_8Kq2Xm4rP1
+        subsidiary:
+          type: string
+          example: Acme
+        amount:
+          $ref: '#/components/schemas/Money'
+        reason:
+          type: string
+          enum: [return, overbilling, rebate, price_adjustment, duplicate_payment]
+          example: overbilling
+        credit_date:
+          type: string
+          format: date
+          example: 2026-09-28
+        reference:
+          type: string
+          description: Credit note number the vendor issued.
+          example: ELS-CN-0912
+        note:
+          type: string
+          example: Vendor double billed seats 36 to 40 on invoice ELS-2026-4417.
+
+    Budget:
+      type: object
+      description: An allocation of spend against a dimension for a fiscal period.
+      required: [id, object, name, period, allocated_amount, remaining_amount]
+      properties:
+        id:
+          type: string
+          example: bud_1Qk4Fp7wLv
+        object:
+          type: string
+          const: budget
+          example: budget
+        name:
+          type: string
+          example: People Operations, FY26 Q4
+        period:
+          type: string
+          description: Fiscal period the budget covers, as YYYY or YYYY-Qn.
+          example: 2026-Q4
+        subsidiary:
+          type: string
+          example: Acme
+        department:
+          type: string
+          example: People Operations
+        cost_center:
+          type: string
+          example: CC-1180
+        category:
+          type: string
+          example: Employee Gifts
+        owner:
+          type: object
+          properties:
+            name:
+              type: string
+              example: Priya Raman
+            email:
+              type: string
+              format: email
+              example: priya.raman@acme.com
+        allocated_amount:
+          $ref: '#/components/schemas/Money'
+        committed_amount:
+          $ref: '#/components/schemas/Money'
+        actual_amount:
+          $ref: '#/components/schemas/Money'
+        remaining_amount:
+          $ref: '#/components/schemas/Money'
+        threshold_percent:
+          type: integer
+          description: Percentage of the allocation at which Zip warns the owner.
+          example: 80
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-07-01T00:00:00Z
+
+    BudgetCheckResult:
+      type: object
+      description: The answer to a budget availability check for a proposed amount.
+      required: [budget_id, sufficient, requested_amount, remaining_amount]
+      properties:
+        budget_id:
+          type: string
+          example: bud_1Qk4Fp7wLv
+        budget_name:
+          type: string
+          example: People Operations, FY26 Q4
+        sufficient:
+          type: boolean
+          description: Whether the remaining balance covers the requested amount.
+          example: false
+        requested_amount:
+          $ref: '#/components/schemas/Money'
+        remaining_amount:
+          $ref: '#/components/schemas/Money'
+        shortfall_amount:
+          $ref: '#/components/schemas/Money'
+        threshold_breached:
+          type: boolean
+          description: Whether approving this amount would cross the budget's warning threshold.
+          example: true
+
+    WebhookEventType:
+      type: string
+      description: An event type a webhook subscription can listen for.
+      enum:
+        - request.created
+        - request.submitted
+        - request.approved
+        - request.rejected
+        - request.cancelled
+        - purchase_order.created
+        - purchase_order.sent
+        - purchase_order.closed
+        - invoice.received
+        - invoice.matched
+        - invoice.match_exception
+        - invoice.returned
+        - bill.created
+        - bill.approved
+        - bill.rejected
+        - bill.paid
+        - payout.scheduled
+        - payout.paid
+        - payout.failed
+        - vendor.created
+        - vendor.onboarding_completed
+        - vendor_credit.applied
+        - budget.threshold_reached
+      example: bill.approved
+
+    WebhookSubscription:
+      type: object
+      description: An HTTPS endpoint registered to receive Zip events.
+      required: [id, object, url, events, status, created_at]
+      properties:
+        id:
+          type: string
+          example: whs_4Dr8Nb2hGy
+        object:
+          type: string
+          const: webhook_subscription
+          example: webhook_subscription
+        url:
+          type: string
+          format: uri
+          example: https://hooks.acme.com/zip/procurement
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookEventType'
+          example: [bill.approved, purchase_order.sent]
+        status:
+          type: string
+          enum: [active, disabled]
+          description: Zip disables a subscription after 72 hours of consecutive failures.
+          example: active
+        description:
+          type: string
+          example: NetSuite sync listener
+        last_delivery:
+          type: object
+          description: Result of the most recent delivery attempt.
+          properties:
+            status_code:
+              type: integer
+              example: 200
+            attempted_at:
+              type: string
+              format: date-time
+              example: 2026-10-03T11:48:22Z
+            succeeded:
+              type: boolean
+              example: true
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-06-02T16:20:00Z

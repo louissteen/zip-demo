@@ -1,0 +1,46 @@
+tags:
+  intake:
+    label: Intake
+    icon: inbox
+  workflow-engine:
+    label: Workflow engine
+    icon: diagram-project
+  procure-to-pay:
+    label: Procure-to-Pay
+    icon: file-invoice-dollar
+  sourcing:
+    label: Sourcing
+    icon: gavel
+  contracts:
+    label: Contracts
+    icon: file-signature
+  supplier-onboarding:
+    label: Supplier onboarding
+    icon: user-plus
+  vendor-management:
+    label: Vendor management
+    icon: building
+  vendor-portal:
+    label: Vendor portal
+    icon: door-open
+  risk:
+    label: Risk
+    icon: triangle-exclamation
+  budgets:
+    label: Budgets
+    icon: wallet
+  spend-insights:
+    label: Spend insights
+    icon: chart-line
+  concierge:
+    label: AI Procurement Concierge
+    icon: comments
+  superagents:
+    label: Superagents
+    icon: robot
+  governed-ai:
+    label: Governed AI
+    icon: shield-check
+  api:
+    label: API
+    icon: code
