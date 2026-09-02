@@ -1,6 +1,5 @@
 ---
-description: "What each purchase request status means and how a request moves between them."
-icon: signal-stream
+description: What each purchase request status means and how a request moves between them.
 ---
 
 # Request statuses
@@ -51,4 +50,4 @@ Editing an approved request does not silently keep its approvals. If you change 
 
 Status is one of the main filters on the **Requests** page and in reporting. Cycle time is measured between status changes, so a request sitting in **Needs info** for a week counts against the requester rather than against an approver. Procurement teams commonly track time in **In review** by approval step to find the stage that slows requests down.
 
-For how these statuses feed spend reporting and savings, see [Spend Insights](https://app.gitbook.com/s/zebllmmpY7BlosLYBwUh/).
+For how these statuses feed spend reporting and savings, see [Spend Insights](https://app.gitbook.com/o/6WfIzfI8ygNrqaIpvHah/s/zebllmmpY7BlosLYBwUh/).

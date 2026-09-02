@@ -1,6 +1,5 @@
 ---
-description: "Find a request, see who is holding it, and move it along."
-icon: magnifying-glass-chart
+description: Find a request, see who is holding it, and move it along.
 ---
 
 # Track a request
@@ -52,7 +51,7 @@ If the step has an escalation policy, an administrator or the request owner can 
 {% endstepper %}
 
 {% hint style="info" %}
-Ask the [AI Procurement Concierge](https://app.gitbook.com/s/cfyHKXX03HFOzcl9ZWBb/) where a request is in plain language, for example "what is holding up my renewal for the design tool". It answers from the same data the detail page shows.
+Ask the [AI Procurement Concierge](https://app.gitbook.com/o/6WfIzfI8ygNrqaIpvHah/s/cfyHKXX03HFOzcl9ZWBb/) where a request is in plain language, for example "what is holding up my renewal for the design tool". It answers from the same data the detail page shows.
 {% endhint %}
 
 ## Watch a request you did not raise

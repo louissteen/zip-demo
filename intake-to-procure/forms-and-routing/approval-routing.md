@@ -1,6 +1,7 @@
 ---
-description: "How Zip assembles an approval chain from request data, and how conditions decide who is added."
-icon: diagram-project
+description: >-
+  How Zip assembles an approval chain from request data, and how conditions
+  decide who is added.
 ---
 
 # Approval routing
@@ -67,4 +68,4 @@ An administrator can skip a step. Skips require a reason and are always visible 
 
 ## Testing a workflow
 
-Use the workflow simulator to submit a hypothetical request and see the chain it produces without notifying anyone. Test the boundaries of every threshold, not the middle. For workflow construction, versioning, and testing, see [Workflow Engine](https://app.gitbook.com/s/cCva0sBd9z7KRG56Fq0I/).
+Use the workflow simulator to submit a hypothetical request and see the chain it produces without notifying anyone. Test the boundaries of every threshold, not the middle. For workflow construction, versioning, and testing, see [Workflow Engine](https://app.gitbook.com/o/6WfIzfI8ygNrqaIpvHah/s/cCva0sBd9z7KRG56Fq0I/).

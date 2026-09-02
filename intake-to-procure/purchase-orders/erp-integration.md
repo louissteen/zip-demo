@@ -1,6 +1,7 @@
 ---
-description: "How purchase orders, vendors, and accounting data move between Zip and your ERP."
-icon: arrows-rotate
+description: >-
+  How purchase orders, vendors, and accounting data move between Zip and your
+  ERP.
 ---
 
 # ERP integration
@@ -57,6 +58,6 @@ Do not create a matching PO manually in the ERP to work around a sync error. Whe
 
 ## Vendor records and the ERP
 
-The vendor record is the piece most likely to drift, because both systems can create vendors. Decide which system owns vendor creation and enforce it. Zip's usual pattern is that new vendors are created in Zip through onboarding and pushed to the ERP, while historical vendors are imported once and matched by tax ID. See [Vendor Management](https://app.gitbook.com/s/VzFAfjeuJK2DKd9GcLgy/) for deduplication and matching rules.
+The vendor record is the piece most likely to drift, because both systems can create vendors. Decide which system owns vendor creation and enforce it. Zip's usual pattern is that new vendors are created in Zip through onboarding and pushed to the ERP, while historical vendors are imported once and matched by tax ID. See [Vendor Management](https://app.gitbook.com/o/6WfIzfI8ygNrqaIpvHah/s/VzFAfjeuJK2DKd9GcLgy/) for deduplication and matching rules.
 
-For connection setup, authentication, and the full list of supported systems, see the [API reference](https://app.gitbook.com/s/CXK9J3Tjg4dEAgf0G90t/).
+For connection setup, authentication, and the full list of supported systems, see the [API reference](https://app.gitbook.com/o/6WfIzfI8ygNrqaIpvHah/s/CXK9J3Tjg4dEAgf0G90t/).

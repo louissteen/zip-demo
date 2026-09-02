@@ -1,6 +1,5 @@
 ---
-description: "Design the questions requesters answer and the data those answers produce."
-icon: rectangle-list
+description: Design the questions requesters answer and the data those answers produce.
 ---
 
 # Build intake forms
@@ -67,4 +66,4 @@ Publish the version and assign it to the request types that should use it.
 {% endstep %}
 {% endstepper %}
 
-For deeper configuration of form logic and reusable question sets, see [Intake Management](https://app.gitbook.com/s/klfPYPbO77zxOWiQGk7y/).
+For deeper configuration of form logic and reusable question sets, see [Intake Management](https://app.gitbook.com/o/6WfIzfI8ygNrqaIpvHah/s/klfPYPbO77zxOWiQGk7y/).

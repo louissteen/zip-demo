@@ -1,6 +1,5 @@
 ---
-description: "Raise a purchase request in Zip and answer the intake questions that route it."
-icon: pen-to-square
+description: Raise a purchase request in Zip and answer the intake questions that route it.
 ---
 
 # Submit a purchase request
@@ -23,7 +22,7 @@ Enter a short title and a description of the purchase. Write the description for
 {% step %}
 ## Select the vendor
 
-Search for the vendor by name. If the vendor already exists in Zip, select it and continue. If it does not, select **Add new vendor** and enter the vendor name and a contact email. Zip starts [Supplier Onboarding](https://app.gitbook.com/s/QStVF3i0EZksxOR4LHvB/) for that vendor in parallel with your request.
+Search for the vendor by name. If the vendor already exists in Zip, select it and continue. If it does not, select **Add new vendor** and enter the vendor name and a contact email. Zip starts [Supplier Onboarding](https://app.gitbook.com/o/6WfIzfI8ygNrqaIpvHah/s/QStVF3i0EZksxOR4LHvB/) for that vendor in parallel with your request.
 {% endstep %}
 
 {% step %}
