@@ -11,7 +11,10 @@ Administrator action is called out where a release needs configuration before it
 
 {% updates %}
 
-{% update title="August 2026 release" date="2026-08-25" tags="superagents,governed-ai,procure-to-pay" %}
+{% update date="2026-08-25" tags="superagents,governed-ai,procure-to-pay" %}
+
+## August 2026 release
+
 
 **Observation mode for Superagent guardrails.** You can now test a guardrail change against recent records before it goes live. Zip reports what the agent would have done and where it would have stopped, without changing anything. Available on every agent type from the **Guardrails** tab. See [Guardrails and approval boundaries](https://app.gitbook.com/s/VraYgcvvYjT6HbxCVqMF/).
 
@@ -23,7 +26,10 @@ Administrator action is called out where a release needs configuration before it
 
 {% endupdate %}
 
-{% update title="July 2026 release" date="2026-07-28" tags="concierge,intake,workflow-engine" %}
+{% update date="2026-07-28" tags="concierge,intake,workflow-engine" %}
+
+## July 2026 release
+
 
 **Concierge answers cite their sources.** Every Concierge answer now names the policy section or record it came from, and requesters can open the source directly. Answers with no sufficient source hand off rather than composing a response. See [What the Concierge answers](https://app.gitbook.com/s/cfyHKXX03HFOzcl9ZWBb/).
 
@@ -35,7 +41,10 @@ Administrator action is called out where a release needs configuration before it
 
 {% endupdate %}
 
-{% update title="June 2026 release" date="2026-06-23" tags="governed-ai,superagents,risk" %}
+{% update date="2026-06-23" tags="governed-ai,superagents,risk" %}
+
+## June 2026 release
+
 
 **AI policy scoping by entity and category.** AI policies can now be scoped to subsidiaries, departments, regions, and categories, with the most restrictive applicable rule taking precedence. Customers running different obligations by region no longer need a single policy with a list of exceptions. See [AI policy definition](https://app.gitbook.com/s/oovoef3hZyAQg9DepDDH/).
 
@@ -47,7 +56,10 @@ Administrator action is called out where a release needs configuration before it
 
 {% endupdate %}
 
-{% update title="May 2026 release" date="2026-05-26" tags="sourcing,contracts,vendor-management" %}
+{% update date="2026-05-26" tags="sourcing,contracts,vendor-management" %}
+
+## May 2026 release
+
 
 **Structured bid comparison.** Sourcing event responses are normalized into a comparable structure so that vendors answering in different formats can be read side by side. Award decisions remain human. See [Sourcing](https://app.gitbook.com/s/yWPKTXf10NGJgEVmE6Ok/).
 
@@ -57,7 +69,10 @@ Administrator action is called out where a release needs configuration before it
 
 {% endupdate %}
 
-{% update title="April 2026 release" date="2026-04-28" tags="procure-to-pay,budgets,spend-insights" %}
+{% update date="2026-04-28" tags="procure-to-pay,budgets,spend-insights" %}
+
+## April 2026 release
+
 
 **Variance tolerances by category.** Invoice-to-PO variance tolerances can be set per category rather than only globally, so professional services and software renewals no longer share a threshold. See [Procure-to-Pay](https://app.gitbook.com/s/uvWZCHh4l0VWI5nRG3c4/).
 
@@ -69,7 +84,10 @@ Administrator action is called out where a release needs configuration before it
 
 {% endupdate %}
 
-{% update title="March 2026 release" date="2026-03-24" tags="supplier-onboarding,vendor-portal,api" %}
+{% update date="2026-03-24" tags="supplier-onboarding,vendor-portal,api" %}
+
+## March 2026 release
+
 
 **Document chasing in the vendor portal.** The vendor onboarding agent requests missing documents directly through the vendor portal and tracks what is outstanding, instead of relying on email follow-up from your team. Bank detail changes remain a human decision at every step. See [Supplier Onboarding](https://app.gitbook.com/s/QStVF3i0EZksxOR4LHvB/).
 
@@ -79,7 +97,10 @@ Administrator action is called out where a release needs configuration before it
 
 {% endupdate %}
 
-{% update title="February 2026 release" date="2026-02-24" tags="superagents,governed-ai,concierge" %}
+{% update date="2026-02-24" tags="superagents,governed-ai,concierge" %}
+
+## February 2026 release
+
 
 **Superagents general availability.** The intake, vendor onboarding, invoice and bill, risk review, contract, and sourcing agents are available to all customers. Each agent runs as its own service role with its own scope and action list, and every run writes an audit record. See [Superagents](https://app.gitbook.com/s/VraYgcvvYjT6HbxCVqMF/).
 
