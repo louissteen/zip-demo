@@ -4,9 +4,9 @@
 
 ## Raising and tracking requests
 
-* [Submit a purchase request](requests/submitting-a-request.md)
-* [Request statuses](requests/request-statuses.md)
-* [Track a request](requests/tracking-a-request.md)
+* [Submit a purchase request](raising-and-tracking-requests/submitting-a-request.md)
+* [Request statuses](raising-and-tracking-requests/request-statuses.md)
+* [Track a request](raising-and-tracking-requests/tracking-a-request.md)
 
 ## Forms and routing
 
