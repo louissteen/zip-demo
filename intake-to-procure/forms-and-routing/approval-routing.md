@@ -6,7 +6,7 @@ description: >-
 
 # Approval routing THIS IS NEW!!
 
-Zip builds an approval chain for each request at submission time by evaluating your workflow against the request's data. Nobody selects approvers by hand, and requesters never need to know policy. If the data changes, the chain is rebuilt.
+THIS IS NEW !!!! Zip builds an approval chain for each request at submission time by evaluating your workflow against the request's data. Nobody selects approvers by hand, and requesters never need to know policy. If the data changes, the chain is rebuilt.
 
 ## How a chain is assembled
 
