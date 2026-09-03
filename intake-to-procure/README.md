@@ -7,6 +7,8 @@ icon: inbox
 
 # Intake-to-Procure
 
+THIS IS NEW!!!!
+
 Intake-to-Procure is the front door to Zip. Anyone in your organization can raise a purchase request from a single place, answer a short set of questions about what they need, and let Zip decide who has to review it. Procurement, finance, legal, IT security, and any other stakeholder are pulled in automatically based on what the request contains, so requesters do not need to know your internal policy to follow it.
 
 Once a request is fully approved, Zip turns it into a purchase order and syncs that PO to your ERP. The same record carries through to receiving, invoices, and bills, so a finance approver looking at a bill months later can trace it back to the original request and the people who approved it.
